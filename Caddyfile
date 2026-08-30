@@ -1,0 +1,45 @@
+# Single public entry point for the OpenProject stack on Railway.
+#
+# Railway's edge has no path-based routing, and OpenProject's Content Security
+# Policy pins `connect-src 'self'`, so the collaborative-editing websocket must
+# be served from the *same* origin as the app. This proxy is what makes that
+# possible: `/hocuspocus*` goes to the Hocuspocus service, everything else to
+# the Rails web service. Both of those stay private.
+
+{
+	admin off
+	# Railway terminates TLS at its edge; Caddy must never try to obtain a cert.
+	auto_https off
+	servers {
+		# Railway's edge reaches containers from CGNAT / the private overlay.
+		# Trusting it is what lets Caddy read the real client IP out of the
+		# X-Forwarded-For header the edge writes.
+		trusted_proxies static 100.64.0.0/10 fd00::/8
+	}
+}
+
+:{$PORT:8080} {
+	# Health check for this service only — never probe an upstream, because
+	# <svc>.railway.internal does not resolve until that service has a container.
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# Collaborative editing (Yjs over websockets). Caddy does not strip the
+	# prefix, which is what the Hocuspocus client expects.
+	handle /hocuspocus* {
+		reverse_proxy {$HOCUSPOCUS_HOST:hocuspocus.railway.internal:1234}
+	}
+
+	handle {
+		reverse_proxy {$OPENPROJECT_WEB_HOST:openproject-web.railway.internal:8080} {
+			# Rails' RemoteIp middleware only filters RFC1918 addresses, so the
+			# two-entry "<client>, <railway edge>" header would leave it reporting
+			# Railway's rotating edge address. Collapsing XFF to the single real
+			# client makes request.remote_ip correct.
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
+
+	log
+}
