@@ -35,7 +35,12 @@ A side benefit: the Rails app and the websocket server both stay private.
 | `OPENPROJECT_WEB_HOST` | `openproject-web.railway.internal:8080` | Rails web service |
 | `HOCUSPOCUS_HOST` | `hocuspocus.railway.internal:1234` | collaborative editing server |
 
-Set the two host variables only if you renamed those services.
+Both host variables are optional. `entrypoint.sh` repairs them **on their
+shape** before Caddy starts: a value that is empty or begins with `:` (what a
+`${{service.RAILWAY_PRIVATE_DOMAIN}}` reference renders as before that service
+owns its first deployment — which is every service in a fresh template deploy)
+falls back to the deterministic private hostname. Caddy's own `{$VAR:default}`
+cannot do this, because it only fires when the variable is *unset*.
 
 ## Health check
 
